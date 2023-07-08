@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+<textarea rows=30 id=source style=width:49%>
+</textarea>
+<textarea rows=30 disabled id=output style=width:49%>
+</textarea>
+<button onclick="javascript:exec()">
+Run
+</button>
+<p id=return>Return value:</p>
+<script>
+function exec() {
+  let output = document.getElementById('output');
+  output.value = "";
+  let scope = {'print': function(x){output.value += `${x}\n`}, 'obj': function(){return {}}, 'arr': function(){return []}};
+  scope['scope'] = scope;
+  scope['eval'] = function(c, s=scope){console.debug(`eval'ing ${c}`);console.debug(s);Subscript.parse(c, s)};
+  let ret = Subscript.parse(document.getElementById('source').value, scope);
+  document.getElementById('return').innerText = `Return value: ${ret}`;
+}
+</script>
+<script src="subscript.js">
+</script
+</body>
+</html>
