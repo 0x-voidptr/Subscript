@@ -1,20 +1,26 @@
 let Subscript = {
-  // Splits a string by a single unescaped delimeter.
-  // e.g. 'one "two" three' => ['one', '"two"', 'three']
-  _split: function(stmnt, chr = "`") {
-    // stringlike splitting
+  _split: function(stmnt) {
     let result = [];
     let prev = '';
-    let active = 1;
+    let active = '';
     let start = 0;
-    for (let i = 0; i < stmnt.length; i++) {
-      let c = stmnt.charAt(i);
-      if (c == chr && prev != '\\') {
-        active = 1 - active;
-        result.push(stmnt.substring(start, i + active));
-        start = i + active;
-      }
+    let c = ''
+    for (let curr = 0; curr < stmnt.length; curr++) {
       prev = c;
+      c = stmnt.charAt(curr);
+      if (!active && (c == '"' || c == '`' || c == '#')) {
+        active = c;
+        result.push(stmnt.substring(start, curr));
+        start = curr;
+      } else if (!!active) {
+        if (c == active && prev != '\\') {
+          if (active != '#') {
+            result.push(stmnt.substring(start, curr + 1));
+          }
+          start = curr + 1;
+          active = '';
+        }
+      }
     }
     result.push(stmnt.substring(start));
     return result;
@@ -227,11 +233,21 @@ let Subscript = {
           }
           let result = scope;
           for (k of split) {
-            if (result[k] == undefined) {
+            if (result instanceof Map) {
+              if (!result.has(k)) {
+                console.error(`No such property ${k} in identifier ${split.join('.')}`);
+              }
+              result = result.get(k);
+            } else if (result[k] == undefined) {
               console.error(`No such property ${k} in identifier ${split.join('.')}`);
-            }
-            if (result != undefined) {
+            } else {
               result = result[k];
+            }
+            if (result == undefined) {
+              result = null;
+            }
+            if (typeof result == "function") {
+              result.__proto__ = null;
             }
           }
           output.push(result);
@@ -253,11 +269,21 @@ let Subscript = {
                 let result = output.pop();
                 let tmp = result;
                 for (k of split) {
-                  if (result[k] == undefined) {
+                  if (result instanceof Map) {
+                    if (!result.has(k)) {
+                      console.error(`No such property ${k} in ${tmp}.${split.join('.')}`);
+                    }
+                    result = result.get(k)
+                  } else if (result[k] == undefined) {
                     console.error(`No such property ${k} in ${tmp}.${split.join('.')}`);
-                  }
-                  if (result != undefined) {
+                  } else {
                     result = result[k]
+                  }
+                  if (result == undefined) {
+                    result = null;
+                  }
+                  if (typeof result == "function") {
+                    result.__proto__ = null;
                   }
                 }
                 output.push(result);
@@ -269,16 +295,21 @@ let Subscript = {
             case '>':
             case '!':
             case '=':
+              let op = chr;
               if (rvalue.charAt(i + 1) == '=') {
-                let op = chr+'=';
-                while (Subscript._precedence(operator[operator.length-1]) >= Subscript._precedence(op)) {
-                  Subscript._apply(output, operator);
-                }
-                operator.push(op);
+                op = chr+'=';
                 i += 1;
-                unary = true;
-                break;
               }
+              while (Subscript._precedence(operator[operator.length-1]) >= Subscript._precedence(op)) {
+                Subscript._apply(output, operator);
+              }
+              operator.push(op);
+              unary = true;
+              break;
+            case '(':
+              operator.push(chr);
+              unary = true;
+              break;
             case '&':
             case '|':
               if (rvalue.charAt(i + 1) == chr) {
@@ -290,10 +321,6 @@ let Subscript = {
                 i += 1;
                 break;
               }
-            case '(':
-              operator.push(chr);
-              unary = true;
-              break;
             case '*':
             case '/':
             case '%':
@@ -352,6 +379,8 @@ let Subscript = {
     }
     if (output.length != 1) {
       console.error(`Error: expression '${rvalue}' contains too many output values. Are you missing an operator?`);
+      console.debug(output);
+      return null;
     }
     return output.pop();
   },
@@ -359,20 +388,31 @@ let Subscript = {
     value = scope;
     split = lvalue.split('.');
     for (let i = 0; i < split.length - 1; i++) {
-      value = value[split[i]];
+      if (value instanceof Map) {
+        value = value.get(split[i]);
+      } else {
+        value = value[split[i]];
+      }
       if (value == undefined) {
-        console.error(`Error: value ${split.slice(0, i + 1).join('')} is undefined`)
+        console.error(`Error: value ${split.slice(0, i + 1).join('.')} is undefined`)
         return;
       }
     }
-    value[split[split.length - 1]] = rvalue;
+    if (value instanceof Map) {
+      value.set(split[split.length - 1], rvalue);
+    } else {
+      value[split[split.length - 1]] = rvalue;
+    }
   },
-  parse: function(code, scope={'print':console.log}) {
+  _stl: new Map([
+    ['print', console.log],
+    ['map', function(){return new Map()}],
+    ['eval', function(c, s=Subscript._stl.slice()){return Subscript.parse(c,s)}]
+  ]),
+  parse: function(code, scope=Object.create(Subscript._stl)) {
     let execute = 0;
     let jumps = [];
-    let a = Subscript._split(code, '#').filter(x => x.charAt(0) != '#').join('');
-    a = Subscript._split(a, '`');
-    a = a.map(x => ((x.charAt(0) != '`')? Subscript._split(x, '"') : x)).flat();
+    let a = Subscript._split(code);
     a = Subscript._join(a).filter(x => x != "");
     let parts = a.map(x => `${x[0]}: ${x.slice(1).join(', ')}`);
     let tmp = null;

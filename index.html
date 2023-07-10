@@ -14,9 +14,12 @@ Run
 function exec() {
   let output = document.getElementById('output');
   output.value = "";
-  let scope = {'print': function(x){output.value += `${x}\n`}, 'obj': function(){return {}}, 'arr': function(){return []}};
-  scope['scope'] = scope;
-  scope['eval'] = function(c, s=scope){console.debug(`eval'ing ${c}`);console.debug(s);Subscript.parse(c, s)};
+  let scope = new Map([
+    ['print', function(...x){x.forEach(y => output.value += `${y}\n`)}],
+    ['map', function(){return new Map()}],
+    ['eval', function(c, s=Object.create(script)){return Subscript.parse(c,s)}]
+  ]);
+  scope.set('scope', scope);
   let ret = Subscript.parse(document.getElementById('source').value, scope);
   document.getElementById('return').innerText = `Return value: ${ret}`;
 }
